@@ -4,7 +4,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
-from .config_loader import load_config
+from src.config_loader import load_config
 
 def get_logger(name: str, file_path: Optional[str], config_path: str = "config.yaml") -> logging.Logger:
     """

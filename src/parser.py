@@ -3,16 +3,17 @@ from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 
-# Целевой URL каталога с товарами
-URL = "https://sushkilove.ru/shop/page/1/?count=24&paged="
+from src.logger import get_logger
+from src.config_loader import load_config
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    )
-}
+logger = get_logger(__name__, file_path="logs/scrapper_errors.log", config_path="config.yaml")
+cfg = load_config("config.yaml").get("parser", {})
+URL = cfg.get("url", "https://sushkilove.ru/shop/page/1/?count=24&paged=")
+LIMIT = cfg.get("limit", 20)
+
+HEADERS = cfg.get("headers", {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+})
 
 def clean_price(raw_price: str) -> float:
     """Очищает строку цены от символов валюты, пробелов и приводит к float."""
@@ -27,8 +28,12 @@ def clean_price(raw_price: str) -> float:
     return None
 
 def fetch_products(limit: int = 20) -> list[dict]:
-    response = requests.get(URL, headers=HEADERS, timeout=10)
-    response.raise_for_status()
+    try:
+        response = requests.get(URL, headers=HEADERS, timeout=10)
+        response.raise_for_status()
+    except requests.HTTPError as e:
+        logger.error(f"Ошибка при запросе к {URL}: {e}")
+        return []
 
     soup = BeautifulSoup(response.text, "lxml")
     
@@ -37,8 +42,7 @@ def fetch_products(limit: int = 20) -> list[dict]:
     collected_data = []
 
     for item in items:
-        if len(collected_data) < limit: pass
-        elif len(collected_data) >= limit:
+        if len(collected_data) >= limit:
             break
 
         # Название товара
@@ -53,9 +57,17 @@ def fetch_products(limit: int = 20) -> list[dict]:
         # Описание
         desc_el = item.select_one(".product-loop-title") or item.select_one(".product-short-description")
         href = desc_el.get("href") if desc_el else None
-        description_response = requests.get(href, headers=HEADERS, timeout=10)
-        description_soup = BeautifulSoup(description_response.text, "lxml")
-        description = description_soup.select_one("#tab-description").get_text("") if description_soup else ""
+        try:
+            description_response = requests.get(href, headers=HEADERS, timeout=10)
+        except requests.RequestException as e:
+            logger.error(f"Ошибка при запросе к {href}: {e}")
+            description_response = None
+
+        if description_response:
+            description_soup = BeautifulSoup(description_response.text, "lxml")
+            description = description_soup.select_one("#tab-description").get_text("") if description_soup else ""
+        else:
+            description = ""
         #print(description)
 
 
@@ -69,6 +81,8 @@ def fetch_products(limit: int = 20) -> list[dict]:
             "timestamp": timestamp,
         })
 
+    if len(collected_data) < limit:
+        logger.warning(f"Собрано товаров меньше, чем запрошено: {len(collected_data)} из {limit}")
     return collected_data
 
 if __name__ == "__main__":

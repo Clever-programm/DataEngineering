@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Dict
 import yaml
 
-_CONFIG_CACHE: Dict[str, Any] | None = None
+_CONFIG_CACHE = None
 
 
 def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
